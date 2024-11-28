@@ -1,22 +1,19 @@
+from flask import Flask
+from flask_pymongo import PyMongo
 from werkzeug.security import generate_password_hash, check_password_hash
 
+# Initialize Flask app and MongoDB
+app = Flask(__name__)
+app.config["MONGO_URI"] = "mongodb://localhost:27017/yourdatabase"
+mongo = PyMongo(app)
+
+# User Model
 class UserModel:
-    def __init__(self, db):
-        """
-        Initialize the model with the MongoDB collection.
-        :param db: The PyMongo database instance
-        """
-        self.collection = db.users  # Assuming the collection is named 'users'
+    def __init__(self):
+        self.collection = mongo.db.users  # Assuming the collection is named 'users'
 
     def create_user(self, email, password, is_admin_faculty, name):
-        """
-        Create a new user.
-        :param email: User's email
-        :param password: Plaintext password
-        :param is_admin_faculty: Boolean for admin/faculty status
-        :param name: User's name
-        :return: Inserted user ID as a string
-        """
+        """Creates a new user"""
         hashed_password = generate_password_hash(password)
         user_data = {
             "Email": email,
@@ -28,47 +25,42 @@ class UserModel:
         return str(result.inserted_id)
 
     def find_user_by_email(self, email):
-        """
-        Find a user by email.
-        :param email: Email to search for
-        :return: User document or None
-        """
+        """Finds a user by email"""
         return self.collection.find_one({"Email": email})
 
     def verify_password(self, email, password):
-        """
-        Verify a user's password.
-        :param email: User's email
-        :param password: Plaintext password
-        :return: True if valid, False otherwise
-        """
+        """Verifies the password for a given email"""
         user = self.find_user_by_email(email)
         if user and check_password_hash(user["Password"], password):
             return True
         return False
 
     def update_user(self, email, updates):
-        """
-        Update user details.
-        :param email: User's email to identify the user
-        :param updates: Dictionary of fields to update
-        :return: True if update succeeded, False otherwise
-        """
+        """Updates user data"""
         result = self.collection.update_one({"Email": email}, {"$set": updates})
         return result.modified_count > 0
 
     def delete_user(self, email):
-        """
-        Delete a user by email.
-        :param email: User's email
-        :return: True if deletion succeeded, False otherwise
-        """
+        """Deletes a user by email"""
         result = self.collection.delete_one({"Email": email})
         return result.deleted_count > 0
 
     def get_all_users(self):
-        """
-        Get all users.
-        :return: List of all user documents
-        """
-        return list(self.collection.find({}, {"_id": 0}))  # Excludes the MongoDB `_id` field
+        """Returns all users"""
+        return list(self.collection.find({}, {"_id": 0}))  # Excluding MongoDB `_id`
+
+# Example usage
+if __name__ == "__main__":
+    with app.app_context():
+        user_model = UserModel()
+        
+        # Create a user
+        user_model.create_user("john.doe@example.com", "securepassword", True, "John Doe")
+        
+        # Find a user
+        user = user_model.find_user_by_email("john.doe@example.com")
+        print(user)
+        
+        # Verify password
+        is_valid = user_model.verify_password("john.doe@example.com", "securepassword")
+        print("Password valid:", is_valid)

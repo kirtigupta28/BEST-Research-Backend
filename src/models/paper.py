@@ -1,3 +1,10 @@
+from flask import Flask, request, jsonify
+from flask_pymongo import PyMongo
+
+app = Flask(__name__)
+app.config["MONGO_URI"] = "mongodb://localhost:27017/yourdatabase"  # Your MongoDB URI
+mongo = PyMongo(app)
+
 class PaperModel:
     def __init__(self, db):
         """
@@ -61,3 +68,76 @@ class PaperModel:
         :return: List of all documents in the collection
         """
         return list(self.collection.find({}, {"_id": 0}))  # Excludes the MongoDB `_id` field
+
+
+# Initialize the PaperModel
+paper_model = PaperModel(mongo.db)
+
+
+@app.route("/paper", methods=["POST"])
+def create_paper():
+    """
+    API endpoint to create a new paper entry.
+    Expects JSON body with keys: PDF_Link, Subject_Code, Year, Branch, Exam, Associated_Faculty
+    """
+    data = request.json
+    try:
+        paper_id = paper_model.create_paper(
+            pdf_link=data["PDF_Link"],
+            subject_code=data["Subject_Code"],
+            year=data["Year"],
+            branch=data["Branch"],
+            exam=data["Exam"],
+            associated_faculty=data["Associated_Faculty"]
+        )
+        return jsonify({"message": "Paper created successfully", "paper_id": paper_id}), 201
+    except Exception as e:
+        return jsonify({"error": str(e)}), 400
+
+
+@app.route("/paper/<subject_code>", methods=["GET"])
+def get_paper(subject_code):
+    """
+    API endpoint to retrieve paper details by subject code.
+    """
+    paper_data = paper_model.find_paper_by_subject_code(subject_code)
+    if paper_data:
+        return jsonify(paper_data), 200
+    return jsonify({"error": "Paper not found"}), 404
+
+
+@app.route("/paper/<subject_code>", methods=["PUT"])
+def update_paper(subject_code):
+    """
+    API endpoint to update paper details for a specific subject code.
+    Expects JSON body with the fields to update.
+    """
+    updates = request.json
+    success = paper_model.update_paper(subject_code, updates)
+    if success:
+        return jsonify({"message": "Paper updated successfully"}), 200
+    return jsonify({"error": "Failed to update paper"}), 400
+
+
+@app.route("/paper/<subject_code>", methods=["DELETE"])
+def delete_paper(subject_code):
+    """
+    API endpoint to delete a paper by subject code.
+    """
+    success = paper_model.delete_paper(subject_code)
+    if success:
+        return jsonify({"message": "Paper deleted successfully"}), 200
+    return jsonify({"error": "Paper not found"}), 404
+
+
+@app.route("/paper", methods=["GET"])
+def get_all_papers():
+    """
+    API endpoint to retrieve all papers.
+    """
+    all_papers = paper_model.get_all_papers()
+    return jsonify(all_papers), 200
+
+
+if __name__ == "__main__":
+    app.run(debug=True)
