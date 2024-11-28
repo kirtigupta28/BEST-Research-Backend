@@ -1,16 +1,6 @@
-from flask import Flask
-from flask_pymongo import PyMongo
-from dotenv import dotenv_values
+from src.utils import connect_db
 
-secrets = dotenv_values(".env")
-
-app = Flask(__name__)
-app.config["MONGO_URI"] = secrets["MONGO_URI"]
-
-# Solve the error in the next line pymongo.errors.InvalidURI
-
-mongo = PyMongo(app)
-db = mongo.db
+app, db = connect_db()
 
 @app.route('/')
 def home():
