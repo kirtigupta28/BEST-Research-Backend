@@ -124,6 +124,20 @@ def delete_user_share(uid):
         return jsonify({"message": "User Share deleted successfully"}), 200
     return jsonify({"error": "User Share not found"}), 404
 
+@app.route("/public_key_shares/<public_key>", methods=["GET"])
+def get_shares_by_public_key(public_key):
+    """
+    API endpoint to retrieve all shares associated with a specific PublicKey.
+    :param public_key: Public key to search for
+    :return: JSON response with all matching shares or an error message
+    """
+    try:
+        shares = list(user_shares_model.collection.find({"PublicKey": public_key}, {"_id": 0}))
+        if shares:
+            return jsonify({"PublicKey": public_key, "Shares": shares}), 200
+        return jsonify({"error": "No shares found for the given public key"}), 404
+    except Exception as e:
+        return jsonify({"error": str(e)}), 400
 
 @app.route("/user_share", methods=["GET"])
 def get_all_user_shares():
