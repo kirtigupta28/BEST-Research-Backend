@@ -1,176 +1,207 @@
-import os
+import base64
+import sys
 from ecdsa.util import randrange
 from ecdsa.curves import SECP256k1
 from ecdsa.ellipticcurve import Point
-from ecdsa.numbertheory import inverse_mod
-from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
-from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
-from cryptography.hazmat.primitives import hashes
-from cryptography.hazmat.backends import default_backend
+from cryptography.fernet import Fernet
+import random
+import os
+import hashlib
+import base64
+from sympy import mod_inverse
+
+# Function Definitions
 
 
-# ------------------ ECC Threshold Cryptosystem ------------------ #
+def derive_fernet_key(ecc_key):
+    """Derive a 32-byte Fernet-compatible key from an ECC key."""
+    key_bytes = str(ecc_key).encode()  # Convert the ECC key to bytes
+    sha256 = hashlib.sha256(key_bytes).digest()  # Compute SHA-256 hash
+    return base64.urlsafe_b64encode(sha256[:32])  # Use the first 32 bytes
 
-def secret_split(secret, t, n, G=SECP256k1.generator, O=SECP256k1.order):
+def generate_polynomial(t, constant_term, order):
+    """Generate a polynomial of degree t-1 with a constant term and random coefficients."""
+    print(f"\nGenerating polynomial of degree {t-1}...")
+    coefficients = [constant_term] + [randrange(order) for _ in range(1, t)]
+    print(f"Polynomial Coefficients: {coefficients}")
+    return coefficients
+
+def evaluate_polynomial(coefficients, x, order):
+    """Evaluate a polynomial at a given x modulo the order."""
+    return sum(c * pow(x, i) for i, c in enumerate(coefficients)) % order
+
+def generate_shares(n, t, order):
+    """Generate shares for n parties with a threshold t."""
+    print("\nGenerating shares for parties...")
+    polynomials = [generate_polynomial(t, randrange(order), order) for _ in range(n)]
+    shares = [[evaluate_polynomial(poly, x + 1, order) for x in range(n)] for poly in polynomials]
+    print(f"Generated Shares: {shares}")
+    return polynomials, shares
+
+def compute_cumulative_shares(shares, n):
+    """Compute cumulative secret shares for each party."""
+    print("\nComputing cumulative shares for each party...")
+    cumulative_shares = [sum(shares[j][i] for j in range(n)) % SECP256k1.order for i in range(n)]
+    print(f"Cumulative Shares: {cumulative_shares}")
+    return cumulative_shares
+
+def compute_public_keys(cumulative_shares, G):
+    """Compute public keys for each party."""
+    print("\nComputing public keys for each party...")
+    public_keys = [share * G for share in cumulative_shares]
+    print(f"Public Keys: {public_keys}")
+    return public_keys
+
+#----------------------------------------------------------------------
+
+def lagrange_interpolation(selected_shares, selected_indices, t, order):
     """
-    Splits a secret into `n` shares, where `t` shares can reconstruct it.
+    Reconstruct the secret using Lagrange interpolation.
+    
+    Params:
+    - selected_shares: List of shares (int).
+    - selected_indices: List of corresponding indices (int, 1-based).
+    - t: Threshold (int).
+    - order: Modulus for arithmetic operations.
+    
+    Returns:
+    - Reconstructed secret (int).
     """
-    assert n >= t, "Number of shares must be greater than or equal to threshold."
-
-    # Polynomial coefficients (secret is the constant term)
-    coef = [secret] + [randrange(O) for _ in range(1, t)]
-
-    # Polynomial function
-    f = lambda x: sum([coef[i] * pow(x, i) for i in range(t)]) % O
-
-    # Generate `n` shares
-    secret_shares = [f(i) for i in range(1, n + 1)]
-
-    # Public commitments (polynomial coefficients multiplied by the generator)
-    F = [coef[j] * G for j in range(t)]
-
-    return secret_shares, F
-
-
-def verify_secret_share(secret_share, i, F, G=SECP256k1.generator):
-    """
-    Verifies a secret share using public commitments.
-    """
-    verify = F[0]
-
-    for j in range(1, len(F)):
-        verify += pow(i + 1, j) * F[j]
-
-    return verify == secret_share * G
-
-
-def reconstruct_key(sub_secret_shares, t, O=SECP256k1.order):
-    """
-    Reconstructs the secret key using a subset of `t` shares.
-    """
-    assert len(sub_secret_shares) >= t, "Insufficient shares to reconstruct the key."
-
-    recon_key = 0
+    assert len(selected_shares) == t, "Must provide exactly t shares for reconstruction."
+    
+    reconstructed_secret = 0
     for j in range(t):
-        mult = 1
-        for k in range(t):
-            if j != k:
-                mult *= (k + 1) / (k + 1 - (j + 1))
-        recon_key += sub_secret_shares[j] * mult
-    return int(recon_key) % O
+        # Calculate Lagrange coefficient
+        lj = 1
+        for m in range(t):
+            if m != j:
+                numerator = selected_indices[m] % order
+                denominator = (selected_indices[m] - selected_indices[j]) % order
+                lj *= numerator * mod_inverse(denominator, order)
+                lj %= order
 
+        # Add share contribution
+        reconstructed_secret += selected_shares[j] * lj
+        reconstructed_secret %= order
 
-def encrypt(pub_key, aes_key, G=SECP256k1.generator, O=SECP256k1.order):
+    return reconstructed_secret
+
+#-----------------------------------------------------------------------
+
+def reconstruct_key(selected_shares, selected_indices, t, order):
     """
-    Encrypts the AES key using ECC public key encryption.
+    Reconstruct the secret from a subset of t shares using Lagrange interpolation.
     """
-    k = randrange(O)
-    C1 = k * G
-    H = k * pub_key
-    C2 = (int.from_bytes(aes_key, "big") + H.y()) % O
-    return (C1, C2)
+    print("\nReconstructing secret key using selected shares...")
+    assert len(selected_shares) == t, "Must provide exactly t shares for reconstruction."
+    reconstructed_secret = 0
+
+    for j in range(t):
+        lj = 1  # Lagrange basis polynomial
+        print(f"\nCalculating Lagrange coefficient for share {j + 1} (index {selected_indices[j]}):")
+        for m in range(t):
+            if m != j:
+                numerator = selected_indices[m] % order
+                denominator = (selected_indices[m] - selected_indices[j]) % order
+                denominator_inv = mod_inverse(denominator, order)  # Modular inverse
+                lj *= numerator * denominator_inv
+                lj %= order  # Modular reduction
+                print(f"  For m={m + 1}: numerator={numerator}, denominator={denominator}, "
+                      f"denominator_inv={denominator_inv}, lj={lj}")
+
+        share_contribution = selected_shares[j] * lj
+        reconstructed_secret += share_contribution
+        reconstructed_secret %= order  # Modular reduction
+        print(f"  Share contribution: {share_contribution % order}, "
+              f"Reconstructed so far: {reconstructed_secret}")
+
+    print(f"\nReconstructed Secret: {reconstructed_secret}")
+    return reconstructed_secret
 
 
-def decrypt(sec_key, cipher, O=SECP256k1.order):
-    """
-    Decrypts the encrypted AES key using ECC private key decryption.
-    """
-    C1, C2 = cipher
-    H = sec_key * C1
-    aes_key_int = (C2 - H.y()) % O
-    aes_key = aes_key_int.to_bytes(32, "big")
-    return aes_key
+def file_encrypt(filename, ecc_key):
+    print("\nEncrypting file...")
+    key = derive_fernet_key(ecc_key)  # Derive Fernet key from ECC key
+    fernet = Fernet(key)
+
+    print("encryption fernet key :", fernet)
+    print("actual key: ", ecc_key)
+
+    with open(filename, 'rb') as file:
+        original = file.read()
+
+    encrypted = fernet.encrypt(original)
+
+    with open(filename, 'wb') as encrypted_file:
+        encrypted_file.write(encrypted)
+    print("File has been encrypted.")
+
+def file_decrypt(filename, ecc_key):
+    print("\nDecrypting file...")
+    key = derive_fernet_key(ecc_key)  # Derive Fernet key from ECC key
+    fernet = Fernet(key)
+
+    print("decryption fernet key: ", fernet)
+    print("actual decryption key: ", ecc_key)
+
+    with open(filename, 'rb') as enc_file:
+        encrypted = enc_file.read()
+
+    decrypted = fernet.decrypt(encrypted)
+
+    with open(filename, 'wb') as dec_file:
+        dec_file.write(decrypted)
+    print("File has been decrypted.")
 
 
-# ------------------ AES File Encryption ------------------ #
 
-def encrypt_file(input_file, output_file, aes_key):
-    """
-    Encrypts a file using AES-256 encryption.
-    """
-    iv = os.urandom(16)
-    cipher = Cipher(algorithms.AES(aes_key), modes.CFB(iv), backend=default_backend())
-    encryptor = cipher.encryptor()
-
-    with open(input_file, "rb") as f:
-        plaintext = f.read()
-
-    ciphertext = iv + encryptor.update(plaintext) + encryptor.finalize()
-
-    with open(output_file, "wb") as f:
-        f.write(ciphertext)
-
-
-def decrypt_file(input_file, output_file, aes_key):
-    """
-    Decrypts an AES-encrypted file.
-    """
-    with open(input_file, "rb") as f:
-        data = f.read()
-
-    iv = data[:16]
-    ciphertext = data[16:]
-    cipher = Cipher(algorithms.AES(aes_key), modes.CFB(iv), backend=default_backend())
-    decryptor = cipher.decryptor()
-
-    plaintext = decryptor.update(ciphertext) + decryptor.finalize()
-
-    with open(output_file, "wb") as f:
-        f.write(plaintext)
-
-
-# ------------------ Threshold Parameters & Operations ------------------ #
-
-def generate_threshold_parameters(t, n):
-    """
-    Generates threshold cryptosystem parameters.
-    """
-    sec_key = randrange(SECP256k1.order)  # Private key
-    pub_key = sec_key * SECP256k1.generator  # Public key
-    secret_shares, commitments = secret_split(sec_key, t, n)
-    return sec_key, pub_key, secret_shares, commitments
-
-
-# ------------------ Example Usage ------------------ #
-
+# Main Program
 if __name__ == "__main__":
-    # Example parameters
-    t = 3  # Threshold
-    n = 5  # Number of shares
-    file_to_encrypt = "example.pdf"
-    encrypted_file = "example_encrypted.pdf"
-    decrypted_file = "example_decrypted.pdf"
+    # Step 1: Take user inputs for n and t
+    n = int(input("Enter the number of parties (n): "))
+    t = int(input("Enter the threshold (t): "))
 
-    # Generate threshold parameters
-    sec_key, pub_key, secret_shares, commitments = generate_threshold_parameters(t, n)
+    # Step 2: Generate shares and compute public/private keys
+    polynomials, shares = generate_shares(n, t, SECP256k1.order)
+    cumulative_shares = compute_cumulative_shares(shares, n)
+    public_keys = compute_public_keys(cumulative_shares, SECP256k1.generator)
 
-    print("Private Key:", sec_key)
-    print("Public Key:", pub_key)
+    # Compute the overall public key
+    overall_public_key = public_keys[0]
+    for pub_key in public_keys[1:]:
+        overall_public_key += pub_key
+    
 
-    # Verify shares
-    for i in range(n):
-        valid = verify_secret_share(secret_shares[i], i, commitments)
-        print(f"Share {i + 1} verified: {valid}")
 
-    # Reconstruct the secret key
-    recon_key = reconstruct_key(secret_shares[:t], t)
-    print("Reconstructed Key:", recon_key)
+    # Step 3: Ask the user if they want to encrypt a file
+    file_name = input("\nEnter the path of the file to encrypt: ")
+    encrypt_choice = input("Do you want to encrypt the file? (yes/no): ").lower()
+    if encrypt_choice == "yes":
+        key = base64.urlsafe_b64encode(int(overall_public_key.x()).to_bytes(32, 'big'))
+        file_encrypt(file_name, key)
 
-    # Generate AES key
-    aes_key = os.urandom(32)
+    # Step 4: Reconstruct the key using random t shares
+    random_indices = random.sample(range(1, n + 1), t)
+    selected_shares = [cumulative_shares[i - 1] for i in random_indices]
+    reconstructed_secret = reconstruct_key(selected_shares, random_indices, t, SECP256k1.order)
+        # Debugging: Check keys
+    print("Derived encryption key:", derive_fernet_key(overall_public_key))
+    print("Derived decryption key:", derive_fernet_key(reconstructed_secret))
 
-    # Encrypt AES key with ECC
-    cipher = encrypt(pub_key, aes_key)
-    print("Encrypted AES Key:", cipher)
+    # Step 5: Ask the user if they want to decrypt the file
+    decrypt_choice = input("Do you want to decrypt the file? (yes/no): ").lower()
+    # print(f"Secret Value (encryption): {secret_value}")
+    # print(f"Reconstructed Secret (decryption): {reconstructed_secret}")
 
-    # Decrypt AES key with ECC
-    decrypted_aes_key = decrypt(sec_key, cipher)
-    print("Decrypted AES Key matches:", decrypted_aes_key == aes_key)
+    if decrypt_choice == "yes":
+        # file_name = input("\nEnter the path of the file to decrypt: ")
+        key = base64.urlsafe_b64encode(int(reconstructed_secret).to_bytes(32, 'big'))
+        file_decrypt(file_name, key)
 
-    # Encrypt file
-    encrypt_file(file_to_encrypt, encrypted_file, aes_key)
-    print(f"File encrypted: {encrypted_file}")
-
-    # Decrypt file
-    decrypt_file(encrypted_file, decrypted_file, aes_key)
-    print(f"File decrypted: {decrypted_file}")
+    # Output summary
+    print("\nSummary:")
+    print(f"Polynomials: {polynomials}")
+    print(f"Shares: {shares}")
+    print(f"Cumulative Shares: {cumulative_shares}")
+    print(f"Public Keys: {public_keys}")
+    print(f"Overall Public Key: {overall_public_key}")
