@@ -98,25 +98,25 @@ def get_user_poly(uid):
     return jsonify({"error": "User not found"}), 404
 
 
-@app.route("/api/userpoly/<uid>", methods=["PUT"])
+@app.route("/api/userpoly/<string:uid>", methods=["PUT"])
 def update_user_poly(uid):
     """
     API endpoint to update the poly values for a specific UID.
     Expects JSON body with the new PolyValues array.
     """
     data = request.json
-    success = user_poly_model.update_user_poly(uid, data["polyvalues"])
+    success = user_poly_model.update_user_poly(ObjectId(uid), data["polyvalues"])
     if success:
         return jsonify({"message": "User Poly updated successfully"}), 200
     return jsonify({"error": "Failed to update user poly"}), 400
 
 
-@app.route("/api/userpoly/<uid>", methods=["DELETE"])
+@app.route("/api/userpoly/<string:uid>", methods=["DELETE"])
 def delete_user_poly(uid):
     """
     API endpoint to delete a user poly entry by UID.
     """
-    success = user_poly_model.delete_user_poly(uid)
+    success = user_poly_model.delete_user_poly(ObjectId(uid))
     if success:
         return jsonify({"message": "User Poly deleted successfully"}), 200
     return jsonify({"error": "User not found"}), 404
