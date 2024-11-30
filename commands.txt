@@ -1,0 +1,10 @@
+start virtual env : venv\Scripts\activate 
+create : python -m venv venv
+If Flask cannot locate your app, set the FLASK_APP environment variable:
+
+On Windows (Command Prompt):
+cmd
+Copy code
+set FLASK_APP=your_app.py
+
+git checkout feature_db <-to switch to another branch
