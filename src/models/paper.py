@@ -1,8 +1,9 @@
 from app import app, db 
-from flask import request, jsonify
+from flask import request, jsonify, send_file, make_response
 from bson import ObjectId
-from ..utils import upload_pdf
+from ..utils import upload_pdf, get_pdf, delete_pdf
 from gridfs import GridFS
+import io
 
 grid_fs = GridFS(db)
 class PaperModel:
@@ -13,13 +14,6 @@ class PaperModel:
         """
         self.collection = db.papers  # Assuming the collection is named 'papers'
     
-    def get_all_papers(self):
-        """
-        Get all papers in the collection.
-        :return: List of all documents in the collection
-        """
-        return list(self.collection.find({}, {"_id": 0}))  # Excludes the MongoDB `_id` field
-
     def create_paper(self):
         """
         Create a new paper entry.
@@ -56,7 +50,7 @@ class PaperModel:
                 return jsonify({"error": "All fields are required"}), 400
 
             paper_data = {
-                "pdf_id": file_id,
+                "pdf_id": ObjectId(file_id),
                 "subject_code": subject_code,
                 "year": year,
                 "branch": branch,
@@ -72,45 +66,64 @@ class PaperModel:
         except Exception as e:
             return jsonify({"error": str(e)}), 400
 
-    def find_paper_by_id(self, id):
+    def find_pdf_by_id(self, id):
         """
-        Find a paper by subject code.
-        :param subject_code: Subject code to search for
+        Find a paper by id.
+        :param subject_code: id to search for
         :return: Document with paper details or None
         """
-        return self.collection.find_one({"_id": id})
+        # exam_data = self.collection.find_one({"_id": id})
+        # return exam_data
 
-    def update_paper(self, subject_code, updates):
+        try:
+            response = get_pdf(id, grid_fs)
+            return response
+            
+        except Exception as e:
+            return jsonify({"error": str(e)}), 404
+        
+    def find_paper_by_id(self, id):
         """
-        Update paper details for a specific subject code.
-        :param subject_code: Subject code to identify the paper
-        :param updates: Dictionary of fields to update
-        :return: True if update succeeded, False otherwise
+        Find a paper by id.
+        :param subject_code: id to search for
+        :return: Document with paper details or None
         """
-        result = self.collection.update_one({"Subject_Code": subject_code}, {"$set": updates})
-        return result.modified_count > 0
+        paper_data = self.collection.find_one({"_id": id})
+        pdf_id = paper_data["pdf_id"]
+        
+        # Retrieve the PDF file from GridFS
+        response = get_pdf(ObjectId(pdf_id), grid_fs)
+        # print(response)
 
-    def delete_paper(self, subject_code):
+        # Add the PDF data to the paper data
+        # paper_data["pdf"] = response_pdf.data
+
+        for key, value in paper_data.items():
+            response.headers[key] = str(value)
+
+        # print(response.headers)
+        return response
+    
+    def delete_paper(self, id):
         """
         Delete a paper by subject code.
         :param subject_code: Subject code of the paper to delete
         :return: True if deletion succeeded, False otherwise
         """
-        result = self.collection.delete_one({"Subject_Code": subject_code})
-        return result.deleted_count > 0
-
+        try: 
+            paper_data = self.collection.find_one({"_id": id})
+            pdf_id = paper_data["pdf_id"]
+            # Delete the PDF file from GridFS
+            response_pdf = delete_pdf(ObjectId(pdf_id), grid_fs)
+            result = self.collection.delete_one({"_id": id})
+            return result.deleted_count > 0
+        except Exception as e:
+            return False
 
 
 # Initialize the PaperModel
 paper_model = PaperModel(db)
 
-@app.route("/api/paper", methods=["GET"])
-def get_all_papers():
-    """
-    API endpoint to retrieve all papers.
-    """
-    all_papers = paper_model.get_all_papers()
-    return jsonify(all_papers), 200
 
 
 @app.route("/api/paper", methods=["POST"])
@@ -121,29 +134,28 @@ def create_paper():
     """
     return paper_model.create_paper()
 
-@app.route("/api/paper/<string:id>", methods=["GET"])
-def get_paper_by_id(id):
+@app.route("/api/paper/pdf/<string:id>", methods=["GET"])
+def get_pdf_by_id(id):
     """
     API endpoint to retrieve paper details by subject code.
     """
-    paper_data = paper_model.find_paper_by_id(ObjectId(id))
-    if paper_data:
-        return jsonify(paper_data), 200
-    return jsonify({"error": "Paper not found"}), 404
-
-
-@app.route("/api/paper/<string:id>", methods=["PUT"])
-def update_paper(id):
+    try:
+        paper_data = paper_model.find_pdf_by_id(ObjectId(id))
+        return paper_data
+    except Exception as e:
+        return jsonify({"error": "Paper not found"}), 404
+    
+@app.route("/api/paper/<string:id>", methods=["GET"])
+def get_paper_by_id(id):
     """
-    API endpoint to update paper details for a specific subject code.
-    Expects JSON body with the fields to update.
+    API endpoint to retrieve paper details by id.
     """
-    updates = request.json
-    success = paper_model.update_paper(ObjectId(id), updates)
-    if success:
-        return jsonify({"message": "Paper updated successfully"}), 200
-    return jsonify({"error": "Failed to update paper"}), 400
-
+    try:
+        paper_data = paper_model.find_paper_by_id(ObjectId(id))
+        return paper_data
+    except Exception as e:
+        return jsonify({"error": "Paper not found"}), 404
+    
 
 @app.route("/api/paper/<string:id>", methods=["DELETE"])
 def delete_paper(id):
