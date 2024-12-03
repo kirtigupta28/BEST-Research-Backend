@@ -8,13 +8,13 @@ from bson import ObjectId
 # app.config["MONGO_URI"] = "mongodb://localhost:27017/yourdatabase"  # Your MongoDB URI
 # mongo = PyMongo(app)
 
-class UserPolyModel:
-    def __init__(self, db):
-        """
-        Initialize the model with the MongoDB collection.
-        :param db: The PyMongo database instance
-        """
-        self.collection = db.user_poly_values  # Assuming the collection is named 'user_poly_values'
+# class UserPolyModel:
+#     def __init__(self, db):
+#         """
+#         Initialize the model with the MongoDB collection.
+#         :param db: The PyMongo database instance
+#         """
+#         self.collection = db.user_poly_values  # Assuming the collection is named 'user_poly_values'
 
     def create_user_poly(self, uid, polyvalues):
         """
@@ -58,12 +58,12 @@ class UserPolyModel:
         result = self.collection.delete_one({"uid": ObjectId(uid)})
         return result.deleted_count > 0
 
-    def get_all_user_polys(self):
-        """
-        Get all user poly entries.
-        :return: List of all documents in the collection
-        """
-        return list(self.collection.find({}, {"_id": 0}))  # Excludes the MongoDB `_id` field
+#     def get_all_user_polys(self):
+#         """
+#         Get all user poly entries.
+#         :return: List of all documents in the collection
+#         """
+#         return list(self.collection.find({}, {"_id": 0}))  # Excludes the MongoDB `_id` field
 
 
 # Initialize the UserPolyModel

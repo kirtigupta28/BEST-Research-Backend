@@ -1,3 +1,5 @@
+# from main import app, db 
+
 # class PaperModel:
 #     def __init__(self, db):
 #         """
@@ -64,7 +66,7 @@
 
 
 # # Initialize the PaperModel
-# paper_model = PaperModel(mongo.db)
+# paper_model = PaperModel(db)
 
 
 # @app.route("/paper", methods=["POST"])
