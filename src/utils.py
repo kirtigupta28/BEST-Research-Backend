@@ -12,8 +12,6 @@ from ecdsa.util import randrange
 
 # from utils import int_to_urlsafe_base64, point_to_urlsafe_base64
 
-from encryptFile import Enc
-from decryptFile import Dec
 import hashlib
 from ecdsa.ellipticcurve import CurveFp, Point
 
