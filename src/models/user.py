@@ -9,7 +9,7 @@ from app import app, db
 # load_dotenv()
 
 # Initialize Flask app
-# app = Flask(name)
+# app = Flask(_name_)
 
 # # MongoDB Configuration
 # mongo_uri = os.getenv("MONGO_URI", "mongodb://localhost:27017/yourdatabase")
@@ -108,5 +108,5 @@ def verify_password():
     return jsonify({"error": "Invalid email or password"}), 401
 
 # Run the app
-if __name__ == "main":
+if __name__ == "_main_":
     app.run(debug=True)
