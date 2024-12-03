@@ -13,7 +13,7 @@ class UserModel:
         self.collection = mongo.db.users  # Assuming the collection is named 'users'
 
     # http://localhost:5000/api/users/register
-    @route("/register", methods=["POST"])
+    @app.route("/register", methods=["POST"])
     def create_user(self, email, password, is_admin_faculty, name):
         """Creates a new user"""
         hashed_password = generate_password_hash(password)
@@ -47,7 +47,7 @@ class UserModel:
         result = self.collection.delete_one({"Email": email})
         return result.deleted_count > 0
 
-    @route("/", methods=["GET"])
+    @app.route("/", methods=["GET"])
     def get_all_users(self):
         """Returns all users"""
         return list(self.collection.find({}, {"_id": 0}))  # Excluding MongoDB `_id`
