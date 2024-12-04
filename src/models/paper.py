@@ -1,9 +1,10 @@
 from app import app, db 
 from flask import request, jsonify, send_file, make_response
 from bson import ObjectId
-from ..utils import upload_pdf, get_pdf, delete_pdf
+from ..utils import upload_pdf, get_pdf, delete_pdf, keygen, encrypt_file, encrypt, point_to_hex
 from gridfs import GridFS
 import io
+from .common_public_key import get_common_public_key
 
 grid_fs = GridFS(db)
 class PaperModel:
@@ -29,15 +30,32 @@ class PaperModel:
             # Access the file from the request
             if 'pdf_id' not in request.files:
                 return jsonify({"error": "No file part in the request"}), 400
-        
+
             pdf_file = request.files['pdf_id']
         
             # Check if a valid file was uploaded
             if pdf_file.filename == '':
                 return jsonify({"error": "No selected file"}), 400
+            
+            # Key for pdf encryption
+            symm_keygen = keygen()
+
+            # Encrypt the file
+            encrypt_pdf_file = encrypt_file(pdf_file, symm_keygen)
+
+            # Encrypt the key
+            common_public_key = get_common_public_key()
+
+            print(symm_keygen)
+            print(common_public_key)
+            
+            # C2 is the encrypted symmetric key (error here)
+            C1, C2 = encrypt(symm_keygen, common_public_key)
         
             # Save the file to GridFS
-            file_id = upload_pdf(pdf_file, grid_fs)
+            file_id = upload_pdf(encrypt_pdf_file, grid_fs)
+            print(C1)
+            print(C2)
 
             # Extract other fields from the request
             subject_code = request.form.get('subject_code')
@@ -55,7 +73,9 @@ class PaperModel:
                 "year": year,
                 "branch": branch,
                 "exam": exam,
-                "faculty": ObjectId(faculty)
+                "faculty": ObjectId(faculty), 
+                "C1": point_to_hex(C1), 
+                "encrypted_key": C2
             }
             result = self.collection.insert_one(paper_data)
             return jsonify({
@@ -64,6 +84,7 @@ class PaperModel:
             }), 201
         
         except Exception as e:
+            print("hello", str(e))
             return jsonify({"error": str(e)}), 400
 
     def find_pdf_by_id(self, id):
@@ -132,6 +153,7 @@ def create_paper():
     API endpoint to create a new paper entry.
     Expects JSON body with keys: PDF_Link, Subject_Code, Year, Branch, Exam, Associated_Faculty
     """
+    print("Creating paper...")
     return paper_model.create_paper()
 
 @app.route("/api/paper/pdf/<string:id>", methods=["GET"])

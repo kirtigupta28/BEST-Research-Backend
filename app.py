@@ -1,8 +1,9 @@
 from src.utils import connect_db
+from flask_cors import CORS, cross_origin
 
 app, db = connect_db()
 
-import src.routes
+CORS(app, resources={r"/api/*": {"origins": "http://localhost:3000"}})
 
-if __name__ == '__main__':
-    app.run(debug=True)
+import src.routes
+# import src.firebase

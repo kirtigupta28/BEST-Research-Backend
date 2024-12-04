@@ -86,6 +86,12 @@ def get_users():
     users = user_model.get_all_users()
     return jsonify(users), 200
 
+@app.route("/api/users/admin", methods=["GET"])
+def get_admin():
+    """API to fetch all admin users"""
+    admin = user_model.get_all_admin()
+    return jsonify(admin), 200
+
 @app.route("/api/users/<email>", methods=["DELETE"])
 def delete_user(email):
     """API to delete a user by email"""
@@ -106,6 +112,10 @@ def verify_password():
     if user_model.verify_password(email, password):
         return jsonify({"message": "Password verified"}), 200
     return jsonify({"error": "Invalid email or password"}), 401
+
+def get_all_admin(): 
+    '''Returns all admin users'''
+    return list(user_model.collection.find({"isAdmin": True}).sort("_id", 1))
 
 # Run the app
 if __name__ == "_main_":

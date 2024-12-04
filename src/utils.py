@@ -5,10 +5,14 @@ from werkzeug.utils import secure_filename
 from bson import ObjectId
 from dotenv import dotenv_values
 import io
+from flask_cors import CORS, cross_origin
+from binascii import unhexlify
 
 from ecdsa.ellipticcurve import CurveFp, Point
 from ecdsa.numbertheory import inverse_mod
 from ecdsa.util import randrange
+from cryptography.fernet import Fernet
+from ecdsa.curves import SECP256k1
 
 # from utils import int_to_urlsafe_base64, point_to_urlsafe_base64
 
@@ -35,6 +39,7 @@ secrets = dotenv_values(".env")
 def connect_db(): 
 
     app = Flask(__name__)
+    CORS(app)
     app.config["MONGO_URI"] = secrets["MONGO_URI"]
 
     print("Connecting to MongoDB...")
@@ -46,6 +51,7 @@ def connect_db():
 def upload_pdf(pdf_file, grid_fs):
     try:
         # Save the file to GridFS
+        print(pdf_file)
         filename = secure_filename(pdf_file.filename)  # Ensure filename is safe
         file_id = grid_fs.put(pdf_file, filename=filename, content_type='application/pdf')
         
@@ -132,7 +138,7 @@ def compute_public_keys(shares, G):
 
     return public_keys
 
-def compute_overall_public_key(public_keys, G): 
+def compute_overall_public_key(public_keys, G=SECP256k1.generator): 
     Q = public_keys[0]
     for i in range(1, len(public_keys)):
         Q = add_points(Q.x(), Q.y(), public_keys[i].x(), public_keys[i].y(), a, p)
@@ -169,7 +175,7 @@ def reconstruct_key(sub_secret_share, t, order):
     return recon_key % order
 
 
-def encrypt(pub_key, message, G, order):
+def encrypt(pub_key, message, G=SECP256k1.generator, order=SECP256k1.order):
     """ Encrypts a message with an ECC threshold public key.
         Standard ECC encryption.
 
@@ -213,46 +219,111 @@ def decrypt(sec_key, cipher, order):
     message = (C2 - H.y())
 
     return message
-    return round(message)
+
+def reconstruct_key(sub_secret_share, t, order):
+    """ Reconstructs a secret from a share of sub secrets. Requires
+        a subset of size t. The sub secret share is the split of the
+        original split.
+        PARAMS
+        ------
+            sub_secret_share: (int) sub set of secrets that can reconstruct secret.
+
+            t: (int) size of sub set that can reconstruct secret.
+            G: (ecdsa.ellipticcurve.Point) Base point for the elliptic curve.
+
+        RETURNS
+        -------
+            reconstructed key.
+    """
+    assert (len(sub_secret_share) >= t)
+    recon_key = 0
+
+    for j in range(1, t + 1):
+        mult = 1
+
+        for h in range(1, t + 1):
+            if h != j:
+                mult *= (h / (h - j))
+
+        recon_key += (sub_secret_share[j - 1] * int(mult)) % order
+
+    return recon_key % order
 
 
+def keygen():
+    key = Fernet.generate_key()
 
-# Example Usage
-t = 3  # Threshold
-n = 5  # Number of shares
-mess = 67432278 # Example message
-# message = string_to_point(curve, str(mess), hashlib.sha256)
+    return key
 
-# Generate shares
-polynomials = [
-    generate_polynomial(t, randrange(order), order) for _ in range(n)
-]
-shares = [[evaluate_polynomial(poly, x + 1, order) for x in range(n)]
-          for poly in polynomials]
+def encrypt_file(pdf_file, key):
 
-# Compute cumulative shares (scalar value)
-cumulative_shares = [
-    sum(share[i] for share in shares) % order for i in range(n)
-]
+    fernet = Fernet(key)
 
-# Compute public keys (point addition)
-public_keys = compute_public_keys(shares, G)
+    # opening the original file to encrypt
+    original = pdf_file.read()
 
-# Combine public keys
-# overall_public_key = public_keys[0]
-# for pub_key in public_keys[1:]:
-    # overall_public_key = add_points(overall_public_key, pub_key, a, p)
+    # encrypting the file
+    encrypted = fernet.encrypt(original)
 
-#Overall public key 
-overall_public_key = compute_overall_public_key(public_keys, G)
+    # opening the file in write mode and
+    # writing the encrypted data
+    with open(pdf_file.filename, 'wb') as encrypted_file:
+        encrypted_file.write(encrypted)
 
-# Print results
-print("Polynomials:", polynomials)
-print("Shares:", shares)
-print("Cumulative Shares:", cumulative_shares)
-print("Public Keys:", [(pk.x(), pk.y()) for pk in public_keys])
-print("Overall Public Key:", (overall_public_key.x(), overall_public_key.y()))
-print("Message:", mess)
+def decrypt_file(filename, key):
 
-# Working fine
-reconstructed_key = reconstruct_key(cumulative_shares, t, order)
+  # initialize the Fernet class
+
+  fernet = (Fernet(key))
+
+  # opening the encrypted file
+  with open(filename+"_encrypted", 'rb') as enc_file:
+    encrypted = enc_file.read()
+
+  # decrypting the file
+  decrypted = fernet.decrypt(encrypted)
+
+  # opening the file in write mode and
+  # writing the decrypted data
+  with open(filename+"_decrypted", 'wb') as dec_file:
+    dec_file.write(decrypted)
+
+def hex_to_point(hex_public_key):
+    """
+    Convert a public key in hex format to a point on the elliptic curve.
+
+    :param hex_public_key: The public key in hex format (uncompressed format).
+    :return: Point on the elliptic curve.
+    """
+    curve = SECP256k1.curve  # Ensure the curve matches the one used in React
+
+    # Validate and parse the hex public key
+    if len(hex_public_key) != 130 or not hex_public_key.startswith("04"):
+        raise ValueError("Invalid uncompressed public key format")
+
+    # Extract x and y coordinates from the hex string
+    x = int(hex_public_key[2:66], 16)  # First 64 characters after "04" are x
+    y = int(hex_public_key[66:], 16)   # Next 64 characters are y
+
+    # Verify the point lies on the curve
+    if not curve.contains_point(x, y):
+        raise ValueError("The public key coordinates are not on the curve")
+
+    return Point(curve, x, y)
+
+
+def point_to_hex(point):
+    """
+    Converts an ECDSA point (x, y) to the hex format compatible with elliptic library.
+    :param point: An elliptic curve point with x and y coordinates.
+    :return: Hexadecimal string of the uncompressed public key.
+    """
+    x = point.x()
+    y = point.y()
+
+    # Convert x and y coordinates to hexadecimal
+    x_hex = format(x, '064x')  # 32-byte (64 hex chars) representation
+    y_hex = format(y, '064x')  # 32-byte (64 hex chars) representation
+
+    # Concatenate with the prefix for uncompressed public keys
+    return f"04{x_hex}{y_hex}"
