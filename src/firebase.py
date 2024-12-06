@@ -1,34 +1,107 @@
-from firebase_admin import initialize_app
-from firebase_admin import getDatabase, ref, set, get, child
-from flask import Flask, request
+import firebase_admin
+from firebase_admin import credentials, db, firestore
+from datetime import datetime
 from app import app
+from flask import request, jsonify
+from exponent_server_sdk import PushClient, PushMessage
+from dotenv import dotenv_values
 
-default_app = initialize_app()
+secrets = dotenv_values('../.env')
 
-# Your web app's Firebase configuration
-firebaseConfig = {
-  "apiKey": "AIzaSyDghhvb9t2ZjcC65hLoH8aGNKpSIPzp8N0",
-  "authDomain": "tess-research.firebaseapp.com",
-  "projectId": "tess-research",
-  "storageBucket": "tess-research.firebasestorage.app",
-  "messagingSenderId": "694576180227",
-  "appId": "1:694576180227:web:684d6f7098408f9ec5b236"
-}
+# Initialize Firebase Admin SDK
+if not firebase_admin._apps:
+    cred = credentials.Certificate("./data.json")
+    firebase_admin.initialize_app(cred, {
+        'databaseURL': secrets["FIREBASE_URI"]
+    })
 
-# Initialize Firebase
-_ = initialize_app(firebaseConfig)
-firebase_db = getDatabase()
-firebase_db_ref = ref(firebase_db)
+@app.route('/send_data', methods=['POST'])
+def send_data():
+    try:
+        # Extract data from the request body
+        data = request.json
+        user_id = data.get('user_id')
+        token = data.get('token')
 
-def saveToken(userId: str, token: str):
-  values = get(child(firebase_db_ref, f"userTokens/{userId}/")).val() or {}
-  payload = {**values, "token": token}
-  set(ref(firebase_db, f"userTokens/{userId}/"), payload)
+        if not user_id or token is None:
+            return jsonify({"error": "Invalid input"}), 400
+
+        # Save data to Firebase
+        ref = db.reference(f'users/{user_id}')
+        ref.set({'token': token})
+
+        return jsonify({"message": "Data sent successfully"}), 200
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+# Route to get data from Firebase Realtime Database
+@app.route('/get_data/<user_id>', methods=['POST'])
+def get_data(user_id):
+    try:
+        # Get data from Firebase
+        ref = db.reference(f'users/{user_id}')
+        data = ref.get()
+
+        if not data:
+            return jsonify({"message": "No data found for the user"}), 404
+
+        # Extract token
+        token = data.get('token')
+
+        push_client = PushClient()
+        push_message = PushMessage(
+            to=token,
+            title="Important for examination process!",
+            body="Login into the app to generate your polynomial values!"
+        )
+        push_client.publish(push_message)
+
+        return jsonify({"message": "Notification sent successfully"}), 200
+
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
 
 
-@app.route("/registerPushToken", methods=["POST"])
-def registerPushToken ():
-  userId = request.json.get("userId")
-  token = request.json.get("token")
-  saveToken(userId, token)
-  return "success", 200
+
+# # Save token for a user
+# @app.route("/api/savetoken", methods=["POST"])
+# def save_token():
+#     data = request.json
+#     if data: 
+#         # push data into db
+#         doc_ref = db.collection('userTokens').document()
+#         doc_ref.set(data)
+#         return jsonify({"id"}), 201
+#     else:
+#         return jsonify({"error": "Request body must be JSON"}), 400
+#     # ref = db.reference(f"userTokens/{user_id}")
+#     # current_values = ref.get() or {}
+#     # current_values['token'] = token
+#     # ref.set(current_values)
+
+# # Get token for a user
+# def get_token(user_id):
+#     ref = db.reference(f"userTokens/{user_id}")
+#     return ref.get() or {}
+
+# Save moisture level sample
+# def save_sample(moisture_level, user_id):
+#     timestamp = datetime.now().timestamp()
+#     ref = db.reference(f"users/{user_id}/{int(timestamp)}")
+#     ref.set({'moisture': moisture_level})
+
+# Get moisture level samples
+# def get_samples(user_id):
+#     ref = db.reference(f"users/{user_id}")
+#     values = ref.get()
+#     if not values:
+#         return {
+#             "currentMoistureLevel": None,
+#             "previousMoistureLevels": []
+#         }
+    
+#     moisture_readings = [entry['moisture'] for entry in values.values()]
+#     return {
+#         "currentMoistureLevel": moisture_readings[-1],
+#         "previousMoistureLevels": moisture_readings
+#     }

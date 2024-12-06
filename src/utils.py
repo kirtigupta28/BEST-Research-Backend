@@ -2,17 +2,21 @@ from flask import Flask, request, jsonify, send_file, make_response
 from flask_pymongo import PyMongo
 from gridfs import GridFS
 from werkzeug.utils import secure_filename
+from werkzeug.datastructures import FileStorage
 from bson import ObjectId
 from dotenv import dotenv_values
 import io
 from flask_cors import CORS, cross_origin
 from binascii import unhexlify
+import hashlib
 
 from ecdsa.ellipticcurve import CurveFp, Point
 from ecdsa.numbertheory import inverse_mod
 from ecdsa.util import randrange
 from cryptography.fernet import Fernet
-from ecdsa.curves import SECP256k1
+# from ecdsa.curves import SECP256k1, NIST256p
+from ecdsa.ecdsa import point_is_valid, int_to_string
+import base64
 
 # from utils import int_to_urlsafe_base64, point_to_urlsafe_base64
 
@@ -20,6 +24,13 @@ import hashlib
 from ecdsa.ellipticcurve import CurveFp, Point
 
 # Custom curve parameters
+# p = SECP256k1.curve.p()  # Prime modulus
+# a = SECP256k1.curve.a() # Curve coefficient a
+# order = SECP256k1.order  # Order of the curve
+# order = 19
+# PatInf = [0, 0] #define "Point at Infinity"
+# G = SECP256k1.generator
+
 p = 17  # Prime modulus
 a = 2  # Curve coefficient a
 b = 2  # Curve coefficient b
@@ -32,7 +43,6 @@ curve = CurveFp(p, a, b)
 
 # Define the generator point (on the curve)
 G = Point(curve, 5, 1, order)
-
 
 secrets = dotenv_values(".env")
 
@@ -51,7 +61,7 @@ def connect_db():
 def upload_pdf(pdf_file, grid_fs):
     try:
         # Save the file to GridFS
-        print(pdf_file)
+        print("Inside utils.upload_pdf", pdf_file)
         filename = secure_filename(pdf_file.filename)  # Ensure filename is safe
         file_id = grid_fs.put(pdf_file, filename=filename, content_type='application/pdf')
         
@@ -83,6 +93,26 @@ def get_pdf(file_id, grid_fs):
 
     except Exception as e:
         return jsonify({"error": str(e)}), 404
+
+def convert_pdf_to_bytes(pdf_file):
+    try:        
+        # Create a file-like object from the file data
+        file_stream = io.BytesIO(pdf_file.read())
+        file_stream.seek(0)
+        
+        # Return the file as a response
+        response = send_file(
+            file_stream,
+            mimetype=pdf_file.content_type,
+            as_attachment=True,
+            download_name=pdf_file.filename
+        )
+
+        return response
+
+    except Exception as e:
+        return jsonify({"error": str(e)}), 404
+
     
 def delete_pdf(file_id, grid_fs):
     try:
@@ -106,7 +136,14 @@ def evaluate_polynomial(coefficients, x, order):
     return sum(c * pow(x, i) for i, c in enumerate(coefficients)) % order
 
 def mod_inv(a, m):
-    return pow(a, -1, m) #since python 3.8 (demonstrated in last video with extended euclidean in C)
+    return pow(a, -1, m)
+
+def is_point_on_curve(x, y, curve):
+  """Check if a point lies on the given elliptic curve."""
+#   if point is None:
+#       return True  # Identity point
+  x, y = x, y
+  return (y**2 - x**3 - SECP256k1.curve.a() * x - SECP256k1.curve.b()) % SECP256k1.curve.p() == 0
 
 def add_points(x0, y0, x1, y1, a, p):
     while y1 < 0:
@@ -126,7 +163,12 @@ def add_points(x0, y0, x1, y1, a, p):
 
     x2 = (Lambda * Lambda - x0 - x1) % p
     y2 = ((x0 - x2) * Lambda - y0) % p
-    return Point(curve, x2, y2, order)
+    if (point_is_valid(G, x2, y2)):
+        print("Point on curve")
+    else:
+        print("Error: Point not on curve")
+    res = Point(curve, x2, y2)
+    return res
 
 
 def compute_public_keys(shares, G):
@@ -138,7 +180,7 @@ def compute_public_keys(shares, G):
 
     return public_keys
 
-def compute_overall_public_key(public_keys, G=SECP256k1.generator): 
+def compute_overall_public_key(public_keys): 
     Q = public_keys[0]
     for i in range(1, len(public_keys)):
         Q = add_points(Q.x(), Q.y(), public_keys[i].x(), public_keys[i].y(), a, p)
@@ -175,7 +217,7 @@ def reconstruct_key(sub_secret_share, t, order):
     return recon_key % order
 
 
-def encrypt(pub_key, message, G=SECP256k1.generator, order=SECP256k1.order):
+def encrypt(pub_key, message):
     """ Encrypts a message with an ECC threshold public key.
         Standard ECC encryption.
 
@@ -190,7 +232,6 @@ def encrypt(pub_key, message, G=SECP256k1.generator, order=SECP256k1.order):
             (P, c) touple with encrypted message.
     """
     k = randrange(order)
-
     C1 = k * G
     H = k * pub_key
 
@@ -199,7 +240,7 @@ def encrypt(pub_key, message, G=SECP256k1.generator, order=SECP256k1.order):
     return (C1, C2)
 
 
-def decrypt(sec_key, cipher, order):
+def decrypt(sec_key, cipher):
     """ Descrypts a ciphertext encrypted with the corresponding public key
         to the private key being provided.
 
@@ -249,6 +290,39 @@ def reconstruct_key(sub_secret_share, t, order):
 
     return recon_key % order
 
+def string_to_fernet_key(input_string):
+    # Hash the string using SHA256 to ensure it's 32 bytes long
+    hash_bytes = hashlib.sha256(input_string.encode()).digest()
+    
+    # Take the first 32 bytes and encode them in URL-safe base64
+    fernet_key = base64.urlsafe_b64encode(hash_bytes[:32])
+    
+    return fernet_key
+
+# def int_to_fernet_key_large(number: int) -> str:
+#     # Convert the integer to bytes
+#     num_bytes = number.to_bytes((number.bit_length() + 7) // 8, 'big')
+    
+#     # If too large, truncate or pad to 32 bytes
+#     if len(num_bytes) > 32:
+#         num_bytes = num_bytes[:32]
+#     else:
+#         num_bytes = num_bytes.rjust(32, b'\x00')  # Pad to 32 bytes
+    
+#     # Base64 encode in a URL-safe manner
+#     key = base64.urlsafe_b64encode(num_bytes).decode('utf-8')
+#     return key
+
+
+def int_to_fernet_key(value):
+    """
+    Convert an integer back to a Fernet key (URL-safe base64).
+    """
+    # Convert the integer to bytes
+    key_bytes = value.to_bytes((value.bit_length() + 7) // 8, byteorder='big')
+    # Encode bytes to a URL-safe base64 string
+    return base64.urlsafe_b64encode(key_bytes).decode('utf-8')
+
 
 def keygen():
     key = Fernet.generate_key()
@@ -259,34 +333,70 @@ def encrypt_file(pdf_file, key):
 
     fernet = Fernet(key)
 
+    print(type(pdf_file))
+
     # opening the original file to encrypt
     original = pdf_file.read()
 
     # encrypting the file
     encrypted = fernet.encrypt(original)
 
-    # opening the file in write mode and
-    # writing the encrypted data
-    with open(pdf_file.filename, 'wb') as encrypted_file:
-        encrypted_file.write(encrypted)
+    file_stream = io.BytesIO(encrypted)
 
-def decrypt_file(filename, key):
+    # Create a custom FileStorage object
+    new_file = FileStorage(
+        stream=file_stream,
+        filename="encrypted_file.pdf",
+        content_type="application/pdf"
+    )
 
+    return new_file
+
+def decrypt_file(pdf_file, key):
+  
   # initialize the Fernet class
+  try:
+    fernet = (Fernet(int_to_string(key)))
 
-  fernet = (Fernet(key))
+    # encrypted data 
+    encrypted_data = pdf_file.read()
+    print("Encrypted Data", encrypted_data)
+
+    decrypted = fernet.decrypt(encrypted_data)
+
+    print("Decrypted Data ", decrypted)
+    
+    file_stream = io.BytesIO(decrypted)
+
+    # Create a custom FileStorage object
+    new_file = FileStorage(
+        stream=file_stream,
+        filename="decrypted_file.pdf",
+        content_type="application/pdf"
+    )
+
+    return new_file
+
+  except fernet.InvalidToken as e:
+    print(e)
+  except TypeError as e:
+    print(e)
+  except Exception as e:
+        print(e)
+
+#   print(pdf_file)
+
+  # encryted data 
+#   encrypted_data = pdf_file.read()
+#   print(encrypted_data)
+#   print(pdf_file)
+
+  # decrypt the data
+#   decrypted_data = fernet.decrypt(encrypted_data)
 
   # opening the encrypted file
-  with open(filename+"_encrypted", 'rb') as enc_file:
-    encrypted = enc_file.read()
-
-  # decrypting the file
-  decrypted = fernet.decrypt(encrypted)
-
-  # opening the file in write mode and
-  # writing the decrypted data
-  with open(filename+"_decrypted", 'wb') as dec_file:
-    dec_file.write(decrypted)
+#   with open(filename, 'wb') as dec_file:
+#         dec_file.write(decrypted_data)
 
 def hex_to_point(hex_public_key):
     """
@@ -295,7 +405,7 @@ def hex_to_point(hex_public_key):
     :param hex_public_key: The public key in hex format (uncompressed format).
     :return: Point on the elliptic curve.
     """
-    curve = SECP256k1.curve  # Ensure the curve matches the one used in React
+    # curve = SECP256k1.curve  # Ensure the curve matches the one used in React
 
     # Validate and parse the hex public key
     if len(hex_public_key) != 130 or not hex_public_key.startswith("04"):
