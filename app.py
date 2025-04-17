@@ -5,5 +5,5 @@ app, db = connect_db()
 
 CORS(app, resources={r"/api/*": {"origins": "http://localhost:3000"}})
 
-import src.routes
+import src.models
 import src.firebase
