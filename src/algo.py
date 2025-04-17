@@ -31,9 +31,9 @@ import time
 # # Define the generator point (on the curve)
 # G = Point(curve, 5, 1, order)
 
-curve = curves.BRAINPOOLP256t1.curve
-G = curves.BRAINPOOLP256t1.generator
-order = curves.BRAINPOOLP256t1.order
+curve = curves.SECP256k1.curve
+G = curves.SECP256k1.generator
+order = curves.SECP256k1.order
 # PatInf = Point(x=None, y=None, curve=None)
 a = curve.a
 b = curve.b
@@ -215,8 +215,8 @@ def asymmetric_encryption(pub_key, message):
     C1 = (k * G) 
     H = (k * pub_key) 
 
-    #TODO:confirm here
-    C2 = (message + H.y()) % order
+    #TODO: order nhi aana chaiye par rehne do 
+    C2 = (message + H.y()) % order 
 
     return (C1, C2)
 
@@ -319,8 +319,8 @@ def get_message(file):
 
 if __name__ == "__main__":
     # Example Usage
-    t: int = 3  # Threshold
-    n: int = 5  # Number of shares
+    t: int = 4 # Threshold
+    n: int = 10  # Number of shares
     file = "Test.pdf"
 
     time_for_key_generation = time.time()
@@ -346,7 +346,7 @@ if __name__ == "__main__":
     for j in range(n):
         print(f"Participant {j+1} share: {cumulative_shares[j]}")
         for result, i, j in verify_secret_share(shares, j+1, commitments, n, t):
-            print(f"Verified: {result}, share sent by i: {i} to j: {j}")
+            print(f"Verified: {result}, share sent by i: {i+1} to j: {j}")
 
     # Compute public keys (point addition)
     public_keys = compute_public_keys()
