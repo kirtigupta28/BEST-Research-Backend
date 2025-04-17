@@ -228,5 +228,33 @@ def delete_paper(id):
     return jsonify({"error": "Paper not found"}), 404
 
 
-if __name__ == "__main__":
-    app.run(debug=True)
+# @app.route("/paper", methods=["GET"])
+# def get_all_papers():
+#     """
+#     API endpoint to retrieve all papers.
+#     """
+#     all_papers = paper_model.get_all_papers()
+#     return jsonify(all_papers), 200
+
+
+# if __name__ == "__main__":
+#     app.run(debug=True)
+from flask import Flask, request, jsonify
+from flask_pymongo import PyMongo
+from werkzeug.security import generate_password_hash, check_password_hash
+# from dotenv import load_dotenv
+# import os
+from app import app, db
+
+# Load environment variables from the .env file/
+# load_dotenv()
+
+# Initialize Flask app
+# app = Flask(_name_)
+
+# # MongoDB Configuration
+# mongo_uri = os.getenv("MONGO_URI", "mongodb://localhost:27017/yourdatabase")
+# app.config["MONGO_URI"] = mongo_uri
+# mongo = PyMongo(app)
+
+# User Model
