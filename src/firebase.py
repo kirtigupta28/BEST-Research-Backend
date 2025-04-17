@@ -6,7 +6,7 @@ from flask import request, jsonify
 from exponent_server_sdk import PushClient, PushMessage
 from dotenv import dotenv_values
 
-secrets = dotenv_values('../.env')
+secrets = dotenv_values('.env')
 
 # Initialize Firebase Admin SDK
 if not firebase_admin._apps:
