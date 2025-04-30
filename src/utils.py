@@ -59,6 +59,9 @@ def connect_db():
     db = mongo.db
     return (app, db)
 
+def configure(app): 
+    app.config["JWT_SECRET_KEY"] = secrets["JWT_SECRET_KEY"]
+
 def upload_pdf(pdf_file, grid_fs):
     try:
         # Save the file to GridFS
