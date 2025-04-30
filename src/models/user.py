@@ -124,20 +124,19 @@
 
 from flask_pymongo import PyMongo
 from werkzeug.security import generate_password_hash, check_password_hash
-from app import app, db
 from flask import request, jsonify
 
 class UserModel:
     def __init__(self, db):
         self.collection = db.users  # Assuming the collection is named 'users'
 
-    def create_user(self, email, password, is_admin, name):
+    def create_user(self, email, password, role, name):
         """Creates a new user"""
         hashed_password = generate_password_hash(password)
         user_data = {
             "Email": email,
             "Password": hashed_password,
-            "isAdmin": is_admin,
+            "Role": role,
             "Name": name
         }
         result = self.collection.insert_one(user_data)
@@ -154,11 +153,10 @@ class UserModel:
             return str(user["_id"])  # Return user_id (MongoDB _id) after verifying password
         return None  # Return None if password doesn't match
 
-
-#     def update_user(self, email, updates):
-#         """Updates user data"""
-#         result = self.collection.update_one({"Email": email}, {"$set": updates})
-#         return result.modified_count > 0
+    def update_user(self, email, updates):
+        """Updates user data"""
+        result = self.collection.update_one({"Email": email}, {"$set": updates})
+        return result.modified_count > 0
 
 #     def delete_user(self, email):
 #         """Deletes a user by email"""
@@ -169,74 +167,6 @@ class UserModel:
         """Returns all users"""
         return list(self.collection.find({}, {"_id": 0}))  # Excluding MongoDB _id
 
-# Initialize UserModel
-user_model = UserModel(db)
-
-# Routes
-@app.route("/api/users/register", methods=["POST"])
-def register_user():
-    """API to register a new user"""
-    data = request.json
-    if not data:
-        return jsonify({"error": "Invalid request"}), 400
-
-    email = data.get("email")
-    password = data.get("password")
-    is_admin = data.get("is_admin", False)
-    name = data.get("name")
-
-    if not all([email, password, name]):
-        return jsonify({"error": "Missing required fields"}), 400
-
-    user_id = user_model.create_user(email, password, is_admin, name)
-    return jsonify({"message": "User created", "user_id": user_id}), 201
-
-
-@app.route("/api/users", methods=["GET"])
-def get_users():
-    """API to fetch all users"""
-    users = user_model.get_all_users()
-    return jsonify(users), 200
-
-@app.route("/api/users/<email>", methods=["DELETE"])
-def delete_user(email):
-    """API to delete a user by email"""
-    if user_model.delete_user(email):
-        return jsonify({"message": f"User with email {email} deleted"}), 200
-    return jsonify({"error": "User not found"}), 404
-
-@app.route("/api/users/verify", methods=["POST"])
-def verify_password():
-    """API to verify user credentials"""
-    data = request.json
-    if not data:
-        return jsonify({"error": "Invalid request"}), 400
-
-    email = data.get("email")
-    password = data.get("password")
-
-    user_id = user_model.verify_password(email, password)
-    if user_id:
-        return jsonify({"message": "Password verified", "user_id": user_id}), 200
-    return jsonify({"error": "Invalid email or password"}), 401
-
-# def get_all_admin(): 
-#     '''Returns all admin users'''
-#     # admins = user_model.collection.find({"isAdmin": True}).sort("_id", 1)
-#     # dic = [{"_id": str(admin.get("_id")), **admin} for admin in admins]
-#     # print (dic)
-#     # return [{"_id": str(admin.get("_id")), **admin} for admin in admins]
-
-#     return list(user_model.collection.find({"isAdmin": True}).sort("_id", 1))
-
-def get_all_admin():
-    '''Returns all admin users'''
-    admins = user_model.collection.find({"isAdmin": True}).sort("_id", 1)
-    
-    # Convert ObjectId to string for each admin document
-    return [{"_id": str(admin["_id"]), "isAdmin": admin.get("isAdmin")} for admin in admins]
-      
-
-# Run the app
-if __name__ == "main":
-    app.run(debug=True)
+# # Run the app
+# if __name__ == "main":
+#     app.run(debug=True)

@@ -44,19 +44,23 @@ curve = CurveFp(p, a, b)
 # Define the generator point (on the curve)
 G = Point(curve, 5, 1, order)
 
-secrets = dotenv_values(".env")
+# secrets = dotenv_values(".env")
+import os 
 
 def connect_db(): 
 
     app = Flask(__name__)
     CORS(app)
-    app.config["MONGO_URI"] = secrets["MONGO_URI"]
+    app.config["MONGO_URI"] = os.getenv("MONGO_URI")
 
     print("Connecting to MongoDB...")
 
     mongo = PyMongo(app)
     db = mongo.db
     return (app, db)
+
+def configure(app): 
+    app.config["JWT_SECRET_KEY"] = secrets["JWT_SECRET_KEY"]
 
 def upload_pdf(pdf_file, grid_fs):
     try:
