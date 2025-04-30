@@ -10,4 +10,5 @@ CORS(app, resources={r"/api/*": {"origins": "http://localhost:3000"}})
 # register_routes()
 
 import src.models
+import src.notifications
 # import src.firebase
