@@ -2,19 +2,15 @@ from flask import Flask, request, jsonify
 from flask_pymongo import PyMongo
 from app import app, db
 from bson import ObjectId
-# from bson.objectid import ObjectID
+from .user import get_all_admin
 
-# app = Flask(__name__)
-# app.config["MONGO_URI"] = "mongodb://localhost:27017/yourdatabase"  # Your MongoDB URI
-# mongo = PyMongo(app)
-
-# class UserPolyModel:
-#     def __init__(self, db):
-#         """
-#         Initialize the model with the MongoDB collection.
-#         :param db: The PyMongo database instance
-#         """
-#         self.collection = db.user_poly_values  # Assuming the collection is named 'user_poly_values'
+class UserPolyModel:
+    def __init__(self, db):
+        """
+        Initialize the model with the MongoDB collection.
+        :param db: The PyMongo database instance
+        """
+        self.collection = db.user_poly_values  # Assuming the collection is named 'user_poly_values'
 
     def create_user_poly(self, uid, polyvalues):
         """
@@ -27,7 +23,7 @@ from bson import ObjectId
             "uid": ObjectId(uid),
             "polyvalues": polyvalues
         }
-        print(user_data)
+        # print(user_data)
         result = self.collection.insert_one(user_data)
         return str(result.inserted_id)
 
@@ -58,17 +54,9 @@ from bson import ObjectId
         result = self.collection.delete_one({"uid": ObjectId(uid)})
         return result.deleted_count > 0
 
-#     def get_all_user_polys(self):
-#         """
-#         Get all user poly entries.
-#         :return: List of all documents in the collection
-#         """
-#         return list(self.collection.find({}, {"_id": 0}))  # Excludes the MongoDB `_id` field
-
 
 # Initialize the UserPolyModel
 user_poly_model = UserPolyModel(db)
-
 
 @app.route("/api/userpoly", methods=["POST"])
 def create_user_poly():
@@ -77,7 +65,7 @@ def create_user_poly():
     Expects JSON body with keys: UID and PolyValues
     """
     data = request.json
-    try:
+    try:      
         user_id = user_poly_model.create_user_poly(
             uid=data["uid"],
             polyvalues=data["polyvalues"]
@@ -86,8 +74,7 @@ def create_user_poly():
     except Exception as e:
         return jsonify({"error": str(e)}), 400
 
-
-@app.route("/api/userpoly/<string:uid>", methods=["GET"])
+@app.route("/api/user_poly_vals/<string:uid>", methods=["GET"])
 def get_user_poly(uid):
     """
     API endpoint to retrieve poly values by UID.
@@ -98,7 +85,7 @@ def get_user_poly(uid):
     return jsonify({"error": "User not found"}), 404
 
 
-@app.route("/api/userpoly/<string:uid>", methods=["PUT"])
+@app.route("/api/user_poly/<string:uid>", methods=["PUT"])
 def update_user_poly(uid):
     """
     API endpoint to update the poly values for a specific UID.
@@ -122,14 +109,41 @@ def delete_user_poly(uid):
     return jsonify({"error": "User not found"}), 404
 
 
-@app.route("/api/userpoly", methods=["GET"])
-def get_all_user_polys():
-    """
-    API endpoint to retrieve all user poly entries.
-    """
-    all_user_polys = user_poly_model.get_all_user_polys()
-    return jsonify(all_user_polys), 200
+@app.route("/api/admins", methods=["GET"])
+def fetch_all_admin():
+    '''Returns all admin users'''
+    try:
+        admins = get_all_admin()  # Call the function to fetch admin users
+        return jsonify(admins), 200  # Return as a JSON response
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500  # Handle exceptions
 
+@app.route("/api/get_combined_shares", methods=["GET"])
+def get_combined_shares():
+    """
+    Endpoint to get combined polynomial shares from all users based on sorted order.
+    """
+    try:
+        # Step 1: Fetch sorted admin users
+        admins = get_all_admin()  # This returns an array of user_ids in sorted order
+        user_shares = []
+
+        # Step 2: For each admin, retrieve their polynomial values based on their position in the sorted list
+        for admin in admins:
+            user_poly = user_poly_model.get_user_poly(admin["user_id"])  # Get their poly values from DB
+            if user_poly:
+                user_shares.append(user_poly["polyvalues"])
+
+        # Step 3: Combine shares based on position
+        combined_shares = []
+        for i in range(len(user_shares[0])):  # Assuming all users have the same number of shares
+            total = sum(int(share[i]) for share in user_shares)
+            combined_shares.append(str(total))  # Convert the sum to string before sending as response
+
+        return jsonify({"combined_shares": combined_shares}), 200
+
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
 
 if __name__ == "main":
     app.run(debug=True)
