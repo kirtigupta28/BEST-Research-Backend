@@ -45,13 +45,14 @@ curve = CurveFp(p, a, b)
 # Define the generator point (on the curve)
 G = Point(curve, 5, 1, order)
 
-secrets = dotenv_values(".env")
+# secrets = dotenv_values(".env")
+import os 
 
 def connect_db(): 
 
     app = Flask(__name__)
     CORS(app)
-    app.config["MONGO_URI"] = secrets["MONGO_URI"]
+    app.config["MONGO_URI"] = os.getenv("MONGO_URI")
 
     print("Connecting to MongoDB...")
 
