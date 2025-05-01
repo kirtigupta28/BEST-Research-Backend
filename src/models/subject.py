@@ -12,7 +12,7 @@ class SubjectModel:
         try:
             if not code: 
                 return None
-            res = self.collection.find_one({"subject_id": code}, {"_id": 0})
+            res = self.collection.find_one({"subject_id": code})
             if(res == None):
                 return None
             else:
