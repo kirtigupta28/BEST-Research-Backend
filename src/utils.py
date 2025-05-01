@@ -22,6 +22,7 @@ import base64
 
 import hashlib
 from ecdsa.ellipticcurve import CurveFp, Point
+from datetime import timedelta
 
 # Custom curve parameters
 # p = SECP256k1.curve.p()  # Prime modulus
@@ -60,6 +61,7 @@ def connect_db():
 
 def configure(app): 
     app.config["JWT_SECRET_KEY"] = secrets["JWT_SECRET_KEY"]
+    app.config["JWT_ACCESS_TOKEN_EXPIRES"] = timedelta(hours=1)
 
 def upload_pdf(pdf_file, grid_fs):
     try:

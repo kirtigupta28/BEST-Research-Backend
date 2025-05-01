@@ -19,7 +19,7 @@ class UserModel:
             "name": data["name"], 
             "password": hashed_password, 
             "institution_id": institution_id, 
-            "role": "Faculty", 
+            "role": data.get("role", "Faculty"),
             "email": data["email"]
         }
         result = self.collection.insert_one(user_data)
