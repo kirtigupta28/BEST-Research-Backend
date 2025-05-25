@@ -4,7 +4,17 @@ from flask import request, jsonify
 class Institution: 
     # id, name
     def __init__(self, db):
-        self.collection = db.institution  
+        self.collection = db.institution
+
+    def get_all_institutes(self): 
+        try: 
+            res = self.collection.find({}, {"_id": 0})
+            # res = [{**doc, "_id": str(doc["_id"])} for doc in res]
+            print(res)
+            return list(res)
+        except Exception as e: 
+            return None 
+  
 
     def get_institution_by_name(self, name): 
         try: 
@@ -23,6 +33,14 @@ class Institution:
             return None
 
 institute_model = Institution(db)
+
+@app.route("/api/institute", methods=["GET"])
+def get_institutes(): 
+    try: 
+        res = institute_model.get_all_institutes()
+        return res 
+    except Exception as e: 
+        return jsonify({"error": str(e)}), 400
 
 
 @app.route("/api/institute/", methods=["POST"])
